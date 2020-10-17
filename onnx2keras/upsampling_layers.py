@@ -1,4 +1,7 @@
 from tensorflow import keras
+import tensorflow as tf
+if not tf.__version__.startswith('1'):
+    import tensorflow.compat.v1 as tf
 import numpy as np
 import logging
 
@@ -17,17 +20,37 @@ def convert_upsample(node, params, layers, lambda_func, node_name, keras_name):
     logger = logging.getLogger('onnx2keras:upsample')
     logger.warning('!!! EXPERIMENTAL SUPPORT (upsample) !!!')
 
-    if len(node.input) != 1:
+    if len(node.input) > 2:
         raise AttributeError('Unsupported number of inputs')
 
-    if params['mode'].decode('utf-8') != 'nearest':
-        logger.error('Cannot convert non-nearest upsampling.')
-        raise AssertionError('Cannot convert non-nearest upsampling')
+    if params['mode'].decode('utf-8') == 'linear':
+        sess = tf.InteractiveSession()
+        scales = layers[node.input[1]]
+        scale = (int(scales[2]), int(scales[3]))
+        sess.close()
 
-    scale = np.uint8(params['scales'][-2:])
+        upsampling = keras.layers.UpSampling2D(
+            size=scale,
+            name=keras_name,
+            # data_format='channels_first',
+            interpolation="bilinear"
+        )
 
-    upsampling = keras.layers.UpSampling2D(
-        size=scale, name=keras_name
-    )
+        layers[node_name] = upsampling(layers[node.input[0]])
+    elif params['mode'].decode('utf-8') == 'nearest':
+        sess = tf.InteractiveSession()
+        scales = layers[node.input[1]]
+        scale = (int(scales[2]), int(scales[3]))
+        sess.close()
 
-    layers[node_name] = upsampling(layers[node.input[0]])
+        upsampling = keras.layers.UpSampling2D(
+            size=scale,
+            name=keras_name,
+            # data_format='channels_first',
+            interpolation='nearest'
+        )
+
+        layers[node_name] = upsampling(layers[node.input[0]])
+    else:
+        logger.error('Cannot convert non-linear/non-nearest upsampling.')
+        raise AssertionError('Cannot convert non-linear/non-nearest upsampling')
